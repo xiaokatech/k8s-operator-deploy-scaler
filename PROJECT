@@ -8,4 +8,14 @@ layout:
 - go.kubebuilder.io/v4
 projectName: k8s-operator-deploy-scaler
 repo: github.com/xiaokatech/k8s-operator-deploy-scaler
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: scaler.com
+  group: api
+  kind: Scaler
+  path: github.com/xiaokatech/k8s-operator-deploy-scaler/api/v1alpha1
+  version: v1alpha1
 version: "3"
