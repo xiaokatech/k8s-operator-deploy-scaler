@@ -18,8 +18,12 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"time"
 
+	v1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -47,11 +51,53 @@ type ScalerReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *ScalerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx,
+		"Request.Namespace", req.Namespace,
+		"Request.Name", req.Name,
+	)
+	log.Info("Reconcile called")
 
-	// TODO(user): your logic here
+	// Create a Scaler instance
+	scaler := &apiv1alpha1.Scaler{}
+	err := r.Get(ctx, req.NamespacedName, scaler)
+	if err != nil {
+		// use client.IgnoreNotFound to ignore not func instance error if we don't have the Scaler instance, to avoid interruption of program
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
-	return ctrl.Result{}, nil
+	startTime := scaler.Spec.Start
+	endTime := scaler.Spec.End
+	replicas := scaler.Spec.Replicas
+
+	currentHour := time.Now().Hour()
+	log.Info(fmt.Sprintf("currentTime: %d", currentHour))
+
+	// Check if in the period of startTime and endTime
+	if currentHour >= startTime && currentHour < endTime {
+		// Loop deployments in scaler instance
+		for _, deploy := range scaler.Spec.Deployments {
+			// Create a new Deployment instance from scaler instance
+			deployment := &v1.Deployment{}
+			err := r.Get(ctx, types.NamespacedName{
+				Name:      deploy.Name,
+				Namespace: deployment.Namespace,
+			}, deployment)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+
+			// Check if the deployment copies num is equal to deployment copies num defined in scaler in current k8s cluster
+			if deployment.Spec.Replicas != &replicas {
+				deployment.Spec.Replicas = &replicas
+				err := r.Update(ctx, deployment)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+			}
+		}
+	}
+
+	return ctrl.Result{RequeueAfter: time.Duration(10 * time.Second)}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
