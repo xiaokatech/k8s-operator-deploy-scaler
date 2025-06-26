@@ -40,7 +40,13 @@ type ScalerSpec struct {
 	// Foo is an example field of Scaler. Edit scaler_types.go to remove/update
 	// Foo string `json:"foo,omitempty"`
 
-	Start       int                                    `json:"start"`
+	// +kubebuilder:validation:Maximum=23
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Required
+	Start int `json:"start"`
+	// +kubebuilder:validation:Maximum=24
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Required
 	End         int                                    `json:"end"`
 	Replicas    int32                                  `json:"replicas"`
 	Deployments []ScalerSpec_Deplyments_NamespacedName `json:"deployments"`
