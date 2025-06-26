@@ -24,12 +24,21 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // ScalerSpec defines the desired state of Scaler.
+type ScalerSpec_Deplyments_NamespacedName struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
 type ScalerSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Foo is an example field of Scaler. Edit scaler_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// Foo string `json:"foo,omitempty"`
+
+	Start       int                                    `json:"start"`
+	End         int                                    `json:"end"`
+	Replicas    int                                    `json:"replicas"`
+	Deployments []ScalerSpec_Deplyments_NamespacedName `json:"deployments"`
 }
 
 // ScalerStatus defines the observed state of Scaler.
