@@ -74,30 +74,45 @@ func (r *ScalerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	// Check if in the period of startTime and endTime
 	if currentHour >= startTime && currentHour < endTime {
-		// Loop deployments in scaler instance
-		for _, deploy := range scaler.Spec.Deployments {
-			// Create a new Deployment instance from scaler instance
-			deployment := &v1.Deployment{}
-			err := r.Get(ctx, types.NamespacedName{
-				Name:      deploy.Name,
-				Namespace: deployment.Namespace,
-			}, deployment)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-
-			// Check if the deployment copies num is equal to deployment copies num defined in scaler in current k8s cluster
-			if deployment.Spec.Replicas != &replicas {
-				deployment.Spec.Replicas = &replicas
-				err := r.Update(ctx, deployment)
-				if err != nil {
-					return ctrl.Result{}, err
-				}
-			}
+		log.Info("starting to call scaleDeployment func")
+		err := scaleDeployment(scaler, r, ctx, replicas)
+		if err != nil {
+			return ctrl.Result{}, nil
 		}
 	}
 
 	return ctrl.Result{RequeueAfter: time.Duration(10 * time.Second)}, nil
+}
+
+func scaleDeployment(scaler *apiv1alpha1.Scaler, r *ScalerReconciler, ctx context.Context, replicas int32) error {
+	// Loop deployments in scaler instance
+	for _, deploy := range scaler.Spec.Deployments {
+		// Create a new Deployment instance from scaler instance
+		deployment := &v1.Deployment{}
+		err := r.Get(ctx, types.NamespacedName{
+			Name:      deploy.Name,
+			Namespace: deployment.Namespace,
+		}, deployment)
+		if err != nil {
+			return err
+		}
+
+		// Check if the deployment copies num is equal to deployment copies num defined in scaler in current k8s cluster
+		if deployment.Spec.Replicas != &replicas {
+			deployment.Spec.Replicas = &replicas
+			err := r.Update(ctx, deployment)
+			if err != nil {
+				scaler.Status.Status = apiv1alpha1.FAILED
+				r.Status().Update(ctx, scaler)
+				return err
+			}
+
+			scaler.Status.Status = apiv1alpha1.SUCCESS
+			r.Status().Update(ctx, scaler)
+		}
+	}
+
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
