@@ -87,6 +87,9 @@ func (r *ScalerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 		log.Info("remove finalizer")
 		controllerutil.RemoveFinalizer(scaler, finalizer)
+		if err := r.Update(ctx, scaler); err != nil {
+			return ctrl.Result{}, err
+		}
 
 		log.Info("remove scaler")
 
