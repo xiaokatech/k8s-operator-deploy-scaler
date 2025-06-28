@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -30,6 +31,11 @@ import (
 
 	apiv1alpha1 "github.com/xiaokatech/k8s-operator-deploy-scaler/api/v1alpha1"
 )
+
+var logger = logf.Log.WithName("scaler_controller")
+
+var originalDeploymentInfo = make(map[string]apiv1alpha1.DeploymentInfo)
+var annotations = make(map[string]string)
 
 // ScalerReconciler reconciles a Scaler object
 type ScalerReconciler struct {
@@ -110,6 +116,50 @@ func scaleDeployment(scaler *apiv1alpha1.Scaler, r *ScalerReconciler, ctx contex
 			scaler.Status.Status = apiv1alpha1.SCALED
 			r.Status().Update(ctx, scaler)
 		}
+	}
+
+	return nil
+}
+
+func addAnnotations(scaler *apiv1alpha1.Scaler, r *ScalerReconciler, ctx context.Context) error {
+
+	// Note deployments original replicas and namespace
+	for _, deploy := range scaler.Spec.Deployments {
+		deployment := &v1.Deployment{}
+		if err := r.Get(ctx, types.NamespacedName{
+			Name:      deploy.Name,
+			Namespace: deploy.Namespace,
+		}, deployment); err != nil {
+			return err
+		}
+
+		// Start note
+		if *deployment.Spec.Replicas != scaler.Spec.Replicas {
+			logger.Info("add original state to originalDeploymentInfo map")
+			originalDeploymentInfo[deployment.Name] = apiv1alpha1.DeploymentInfo{
+				Replicas:  *deployment.Spec.Replicas,
+				Namespace: deployment.Namespace,
+			}
+		}
+	}
+
+	// Add originalDeploymentInfo into annotations
+	for deploymentName, info := range originalDeploymentInfo {
+		// Convert into into json format
+		infoJson, err := json.Marshal(info)
+		if err != nil {
+			return err
+		}
+
+		// Save infoJson into annotations map
+		annotations[deploymentName] = string(infoJson)
+	}
+
+	// Update CRD annotations
+	scaler.ObjectMeta.Annotations = annotations
+	err := r.Update(ctx, scaler)
+	if err != nil {
+		return err
 	}
 
 	return nil
