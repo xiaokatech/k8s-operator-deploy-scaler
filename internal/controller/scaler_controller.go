@@ -107,7 +107,7 @@ func scaleDeployment(scaler *apiv1alpha1.Scaler, r *ScalerReconciler, ctx contex
 				return err
 			}
 
-			scaler.Status.Status = apiv1alpha1.SUCCESS
+			scaler.Status.Status = apiv1alpha1.SCALED
 			r.Status().Update(ctx, scaler)
 		}
 	}

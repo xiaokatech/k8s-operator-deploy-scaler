@@ -21,12 +21,19 @@ import (
 )
 
 const (
-	SUCCESS = "Success"
-	FAILED  = "Failed"
+	SCALED   = "Scaled"
+	FAILED   = "Failed"
+	PENDING  = "Pending"
+	RESTORED = "Restored"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+
+type DeploymentInfo struct {
+	Replicas  int32  `json:"replicas"`
+	Namespace string `json:"namespace"`
+}
 
 // ScalerSpec defines the desired state of Scaler.
 type ScalerSpec_Deplyments_NamespacedName struct {
