@@ -71,6 +71,20 @@ func (r *ScalerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if scaler.Status.Status == "" {
+		scaler.Status.Status = apiv1alpha1.PENDING
+		err := r.Status().Update(ctx, scaler)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Add managed deployments replicas and namespaces by scaler into annotations
+		if err := addAnnotations(scaler, r, ctx); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Star to execute scaler logics
 	startTime := scaler.Spec.Start
 	endTime := scaler.Spec.End
 	replicas := scaler.Spec.Replicas
