@@ -80,14 +80,50 @@ func (r *ScalerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	// Check if in the period of startTime and endTime
 	if currentHour >= startTime && currentHour < endTime {
-		log.Info("starting to call scaleDeployment func")
-		err := scaleDeployment(scaler, r, ctx, replicas)
-		if err != nil {
-			return ctrl.Result{}, nil
+		if scaler.Status.Status != apiv1alpha1.SCALED {
+			log.Info("starting to call scaleDeployment func")
+			err := scaleDeployment(scaler, r, ctx, replicas)
+			if err != nil {
+				return ctrl.Result{}, nil
+			}
+		}
+	} else {
+		if scaler.Status.Status == apiv1alpha1.SCALED {
+			restoreDeployment(scaler, r, ctx)
 		}
 	}
 
 	return ctrl.Result{RequeueAfter: time.Duration(10 * time.Second)}, nil
+}
+
+func restoreDeployment(scaler *apiv1alpha1.Scaler, r *ScalerReconciler, ctx context.Context) error {
+	logger.Info("starting to return to the original state")
+
+	for name, info := range originalDeploymentInfo {
+		deployment := &v1.Deployment{}
+		if err := r.Get(ctx, types.NamespacedName{
+			Name:      name,
+			Namespace: info.Namespace,
+		}, deployment); err != nil {
+			return err
+		}
+
+		if deployment.Spec.Replicas != &info.Replicas {
+			deployment.Spec.Replicas = &info.Replicas
+			if err := r.Update(ctx, deployment); err != nil {
+				return err
+			}
+		}
+
+	}
+
+	scaler.Status.Status = apiv1alpha1.RESTORED
+	err := r.Status().Update(ctx, scaler)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func scaleDeployment(scaler *apiv1alpha1.Scaler, r *ScalerReconciler, ctx context.Context, replicas int32) error {
