@@ -74,53 +74,7 @@ func (r *ScalerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Case 1: instances live
-	if scaler.ObjectMeta.DeletionTimestamp.IsZero() {
-		if !controllerutil.ContainsFinalizer(scaler, finalizer) {
-			controllerutil.AddFinalizer(scaler, finalizer)
-			log.Info("Add finalizer: ")
-			if err := r.Update(ctx, scaler); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-
-		if scaler.Status.Status == "" {
-			scaler.Status.Status = apiv1alpha1.PENDING
-			err := r.Status().Update(ctx, scaler)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-
-			// Add managed deployments replicas and namespaces by scaler into annotations
-			if err := addAnnotations(scaler, r, ctx); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-
-		// Star to execute scaler logics
-		startTime := scaler.Spec.Start
-		endTime := scaler.Spec.End
-		replicas := scaler.Spec.Replicas
-
-		currentHour := time.Now().Hour()
-		log.Info(fmt.Sprintf("currentTime: %d", currentHour))
-
-		// Check if in the period of startTime and endTime
-		if currentHour >= startTime && currentHour < endTime {
-			if scaler.Status.Status != apiv1alpha1.SCALED {
-				log.Info("starting to call scaleDeployment func")
-				err := scaleDeployment(scaler, r, ctx, replicas)
-				if err != nil {
-					return ctrl.Result{}, nil
-				}
-			}
-		} else {
-			if scaler.Status.Status == apiv1alpha1.SCALED {
-				restoreDeployment(scaler, r, ctx)
-			}
-		}
-
-	} else {
+	if !scaler.ObjectMeta.DeletionTimestamp.IsZero() {
 		// Case 2: delete instance
 		log.Info("Deletion flow")
 
@@ -135,6 +89,53 @@ func (r *ScalerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		controllerutil.RemoveFinalizer(scaler, finalizer)
 
 		log.Info("remove scaler")
+
+		return ctrl.Result{}, nil
+	}
+
+	// Case 1: instances live
+	if !controllerutil.ContainsFinalizer(scaler, finalizer) {
+		controllerutil.AddFinalizer(scaler, finalizer)
+		log.Info("Add finalizer: ")
+		if err := r.Update(ctx, scaler); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	if scaler.Status.Status == "" {
+		scaler.Status.Status = apiv1alpha1.PENDING
+		err := r.Status().Update(ctx, scaler)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Add managed deployments replicas and namespaces by scaler into annotations
+		if err := addAnnotations(scaler, r, ctx); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Star to execute scaler logics
+	startTime := scaler.Spec.Start
+	endTime := scaler.Spec.End
+	replicas := scaler.Spec.Replicas
+
+	currentHour := time.Now().Hour()
+	log.Info(fmt.Sprintf("currentTime: %d", currentHour))
+
+	// Check if in the period of startTime and endTime
+	if currentHour >= startTime && currentHour < endTime {
+		if scaler.Status.Status != apiv1alpha1.SCALED {
+			log.Info("starting to call scaleDeployment func")
+			err := scaleDeployment(scaler, r, ctx, replicas)
+			if err != nil {
+				return ctrl.Result{}, nil
+			}
+		}
+	} else {
+		if scaler.Status.Status == apiv1alpha1.SCALED {
+			restoreDeployment(scaler, r, ctx)
+		}
 	}
 
 	return ctrl.Result{RequeueAfter: time.Duration(10 * time.Second)}, nil
