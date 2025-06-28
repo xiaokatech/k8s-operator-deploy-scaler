@@ -27,12 +27,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	apiv1alpha1 "github.com/xiaokatech/k8s-operator-deploy-scaler/api/v1alpha1"
 )
 
 var logger = logf.Log.WithName("scaler_controller")
+
+const finalizer = "scalers.api.scaler.com/finalizer"
 
 var originalDeploymentInfo = make(map[string]apiv1alpha1.DeploymentInfo)
 var annotations = make(map[string]string)
@@ -71,40 +74,67 @@ func (r *ScalerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if scaler.Status.Status == "" {
-		scaler.Status.Status = apiv1alpha1.PENDING
-		err := r.Status().Update(ctx, scaler)
-		if err != nil {
-			return ctrl.Result{}, err
+	// Case 1: instances live
+	if scaler.ObjectMeta.DeletionTimestamp.IsZero() {
+		if !controllerutil.ContainsFinalizer(scaler, finalizer) {
+			controllerutil.AddFinalizer(scaler, finalizer)
+			log.Info("Add finalizer: ")
+			if err := r.Update(ctx, scaler); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 
-		// Add managed deployments replicas and namespaces by scaler into annotations
-		if err := addAnnotations(scaler, r, ctx); err != nil {
-			return ctrl.Result{}, err
+		if scaler.Status.Status == "" {
+			scaler.Status.Status = apiv1alpha1.PENDING
+			err := r.Status().Update(ctx, scaler)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+
+			// Add managed deployments replicas and namespaces by scaler into annotations
+			if err := addAnnotations(scaler, r, ctx); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
-	}
 
-	// Star to execute scaler logics
-	startTime := scaler.Spec.Start
-	endTime := scaler.Spec.End
-	replicas := scaler.Spec.Replicas
+		// Star to execute scaler logics
+		startTime := scaler.Spec.Start
+		endTime := scaler.Spec.End
+		replicas := scaler.Spec.Replicas
 
-	currentHour := time.Now().Hour()
-	log.Info(fmt.Sprintf("currentTime: %d", currentHour))
+		currentHour := time.Now().Hour()
+		log.Info(fmt.Sprintf("currentTime: %d", currentHour))
 
-	// Check if in the period of startTime and endTime
-	if currentHour >= startTime && currentHour < endTime {
-		if scaler.Status.Status != apiv1alpha1.SCALED {
-			log.Info("starting to call scaleDeployment func")
-			err := scaleDeployment(scaler, r, ctx, replicas)
+		// Check if in the period of startTime and endTime
+		if currentHour >= startTime && currentHour < endTime {
+			if scaler.Status.Status != apiv1alpha1.SCALED {
+				log.Info("starting to call scaleDeployment func")
+				err := scaleDeployment(scaler, r, ctx, replicas)
+				if err != nil {
+					return ctrl.Result{}, nil
+				}
+			}
+		} else {
+			if scaler.Status.Status == apiv1alpha1.SCALED {
+				restoreDeployment(scaler, r, ctx)
+			}
+		}
+
+	} else {
+		// Case 2: delete instance
+		log.Info("Deletion flow")
+
+		if scaler.Status.Status == apiv1alpha1.SCALED {
+			err := restoreDeployment(scaler, r, ctx)
 			if err != nil {
 				return ctrl.Result{}, nil
 			}
 		}
-	} else {
-		if scaler.Status.Status == apiv1alpha1.SCALED {
-			restoreDeployment(scaler, r, ctx)
-		}
+
+		log.Info("remove finalizer")
+		controllerutil.RemoveFinalizer(scaler, finalizer)
+
+		log.Info("remove scaler")
 	}
 
 	return ctrl.Result{RequeueAfter: time.Duration(10 * time.Second)}, nil
